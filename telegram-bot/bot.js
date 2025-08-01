@@ -497,6 +497,14 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'admin_stats':
+                // Si c'est une actualisation, afficher une notification
+                if (data === 'admin_stats' && callbackQuery.message.text && callbackQuery.message.text.includes('Statistiques du Bot')) {
+                    await bot.answerCallbackQuery(callbackQuery.id, {
+                        text: '✅ Statistiques actualisées!',
+                        show_alert: false
+                    });
+                }
+                
                 // Calculer les statistiques
                 const totalUsers = users.size;
                 const totalAdmins = admins.size;
@@ -518,7 +526,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     `└─ Administrateurs: ${totalAdmins}\n\n` +
                     `⏱️ **Temps de fonctionnement**\n` +
                     `└─ ${uptimeDays}j ${uptimeHours}h ${uptimeMinutes}m\n\n` +
-                    `📅 **Dernière mise à jour**\n` +
+                    `📅 **Dernière actualisation**\n` +
                     `└─ ${now.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })}\n\n` +
                     `💾 **Données**\n` +
                     `├─ Réseaux sociaux: ${config.socialNetworks ? config.socialNetworks.length : 0}\n` +
