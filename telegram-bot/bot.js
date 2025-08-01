@@ -29,6 +29,9 @@ const users = new Set();
 // Stocker les administrateurs
 const admins = new Set([ADMIN_ID]);
 
+// Temps de démarrage du bot
+const botStartTime = new Date();
+
 // Charger la configuration au démarrage
 let config = loadConfig();
 
@@ -196,6 +199,35 @@ bot.onText(/\/start/, async (msg) => {
     await sendWelcomeMessage(chatId);
 });
 
+// Commande /id pour obtenir son ID
+bot.onText(/\/id/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const username = msg.from.username ? `@${msg.from.username}` : 'Non défini';
+    const firstName = msg.from.first_name;
+    const lastName = msg.from.last_name || '';
+    
+    // Supprimer le message de commande
+    try {
+        await bot.deleteMessage(chatId, msg.message_id);
+    } catch (error) {}
+    
+    const idMessage = `🆔 **Vos informations**\n\n` +
+        `👤 **Nom:** ${firstName} ${lastName}\n` +
+        `📛 **Username:** ${username}\n` +
+        `🔢 **ID Telegram:** \`${userId}\`\n\n` +
+        `_Vous pouvez copier votre ID en cliquant dessus_`;
+    
+    await sendNewMessage(chatId, idMessage, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [[
+                { text: '❌ Fermer', callback_data: 'admin_close' }
+            ]]
+        }
+    });
+});
+
 // Commande /admin
 bot.onText(/\/admin/, async (msg) => {
     const chatId = msg.chat.id;
@@ -275,7 +307,11 @@ bot.on('callback_query', async (callbackQuery) => {
 
             case 'admin_edit_welcome':
                 userStates[userId] = { action: 'editing_welcome', messageId: messageId };
-                await updateMessage(chatId, messageId, '📝 Envoyez le nouveau message d\'accueil:', {
+                const currentWelcome = config.welcomeMessage || 'Aucun message configuré';
+                await updateMessage(chatId, messageId, 
+                    `📝 **Message d'accueil actuel:**\n\n${currentWelcome}\n\n` +
+                    `💡 *Envoyez le nouveau message d'accueil pour le remplacer*`, {
+                    parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_menu' }
@@ -297,7 +333,13 @@ bot.on('callback_query', async (callbackQuery) => {
 
             case 'admin_edit_miniapp':
                 userStates[userId] = { action: 'editing_miniapp_name', messageId: messageId };
-                await updateMessage(chatId, messageId, '📱 Entrez le nom du bouton pour la mini application:', {
+                const currentMiniApp = config.miniApp ? 
+                    `Nom: ${config.miniApp.text || 'Non défini'}\nURL: ${config.miniApp.url || 'Non défini'}` : 
+                    'Aucune mini application configurée';
+                await updateMessage(chatId, messageId, 
+                    `📱 **Mini Application actuelle:**\n\n${currentMiniApp}\n\n` +
+                    `💡 *Entrez le nom du bouton pour la mini application*`, {
+                    parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_menu' }
@@ -325,7 +367,11 @@ bot.on('callback_query', async (callbackQuery) => {
 
             case 'admin_edit_info':
                 userStates[userId] = { action: 'editing_info', messageId: messageId };
-                await updateMessage(chatId, messageId, 'ℹ️ Envoyez le nouveau texte pour la section informations:', {
+                const currentInfo = config.infoText || 'Aucune information configurée';
+                await updateMessage(chatId, messageId, 
+                    `ℹ️ **Informations actuelles:**\n\n${currentInfo}\n\n` +
+                    `💡 *Envoyez le nouveau texte pour remplacer les informations*`, {
+                    parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_menu' }
@@ -352,12 +398,28 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'admin_manage_admins':
-                const adminsList = Array.from(admins).map(id => {
-                    if (id === ADMIN_ID) return `👑 ${id} (Principal)`;
-                    return `👤 ${id}`;
-                }).join('\n');
+                const adminsList = await Promise.all(Array.from(admins).map(async (id) => {
+                    try {
+                        const chat = await bot.getChat(id);
+                        const name = chat.first_name + (chat.last_name ? ` ${chat.last_name}` : '');
+                        const username = chat.username ? `@${chat.username}` : '';
+                        if (id === ADMIN_ID) {
+                            return `👑 **${name}**${username ? ` (${username})` : ''}\n   └─ ID: \`${id}\` _(Principal)_`;
+                        }
+                        return `👤 **${name}**${username ? ` (${username})` : ''}\n   └─ ID: \`${id}\``;
+                    } catch (error) {
+                        if (id === ADMIN_ID) return `👑 ID: \`${id}\` _(Principal)_`;
+                        return `👤 ID: \`${id}\``;
+                    }
+                }));
                 
-                await updateMessage(chatId, messageId, `👥 Administrateurs actuels:\n\n${adminsList}`, {
+                const adminCount = admins.size;
+                const adminMessage = `👥 **Gestion des Administrateurs**\n\n` +
+                    `📊 Total: ${adminCount} administrateur${adminCount > 1 ? 's' : ''}\n\n` +
+                    `**Liste des administrateurs:**\n${adminsList.join('\n\n')}`;
+                
+                await updateMessage(chatId, messageId, adminMessage, {
+                    parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [
                             [{ text: '➕ Ajouter un admin', callback_data: 'admin_add_admin' }],
@@ -370,7 +432,11 @@ bot.on('callback_query', async (callbackQuery) => {
 
             case 'admin_add_admin':
                 userStates[userId] = { action: 'adding_admin', messageId: messageId };
-                await updateMessage(chatId, messageId, '👤 Envoyez l\'ID Telegram du nouvel administrateur:', {
+                await updateMessage(chatId, messageId, 
+                    `👤 **Ajouter un nouvel administrateur**\n\n` +
+                    `📝 Envoyez l'ID Telegram du nouvel administrateur\n\n` +
+                    `💡 _Pour obtenir l'ID d'un utilisateur, il doit d'abord démarrer le bot avec /start_`, {
+                    parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_manage_admins' }
@@ -409,6 +475,59 @@ bot.on('callback_query', async (callbackQuery) => {
                             [{ text: '⬅️ Retour', callback_data: 'admin_manage_admins' }]
                         ]
                     }
+                });
+                break;
+
+            case 'admin_stats':
+                // Calculer les statistiques
+                const totalUsers = users.size;
+                const totalAdmins = admins.size;
+                const regularUsers = totalUsers - totalAdmins;
+                
+                // Obtenir la date de démarrage du bot (à partir du premier utilisateur ou maintenant)
+                const now = new Date();
+                const startTime = botStartTime || now;
+                const uptime = now - startTime;
+                const uptimeDays = Math.floor(uptime / (1000 * 60 * 60 * 24));
+                const uptimeHours = Math.floor((uptime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const uptimeMinutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
+                
+                // Créer le message de statistiques
+                const statsMessage = `📊 **Statistiques du Bot**\n\n` +
+                    `👥 **Utilisateurs**\n` +
+                    `├─ Total: ${totalUsers}\n` +
+                    `├─ Utilisateurs réguliers: ${regularUsers}\n` +
+                    `└─ Administrateurs: ${totalAdmins}\n\n` +
+                    `⏱️ **Temps de fonctionnement**\n` +
+                    `└─ ${uptimeDays}j ${uptimeHours}h ${uptimeMinutes}m\n\n` +
+                    `📅 **Dernière mise à jour**\n` +
+                    `└─ ${now.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })}\n\n` +
+                    `💾 **Données**\n` +
+                    `├─ Réseaux sociaux: ${config.socialNetworks ? config.socialNetworks.length : 0}\n` +
+                    `└─ Message d'accueil: ${config.welcomeMessage ? 'Configuré ✅' : 'Non configuré ❌'}`;
+                
+                await updateMessage(chatId, messageId, statsMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔄 Actualiser', callback_data: 'admin_stats' }],
+                            [{ text: '📥 Exporter les utilisateurs', callback_data: 'admin_export_users' }],
+                            [{ text: '⬅️ Retour', callback_data: 'admin_menu' }]
+                        ]
+                    }
+                });
+                break;
+
+            case 'admin_export_users':
+                // Créer une liste des utilisateurs pour l'export
+                const usersList = Array.from(users).map(userId => {
+                    const isAdmin = admins.has(userId);
+                    return `${userId}${isAdmin ? ' (Admin)' : ''}`;
+                }).join('\n');
+                
+                await bot.sendDocument(chatId, Buffer.from(usersList), {
+                    filename: `users_export_${new Date().toISOString().split('T')[0]}.txt`,
+                    caption: `📥 Export des ${users.size} utilisateurs`
                 });
                 break;
 
@@ -514,18 +633,28 @@ bot.on('message', async (msg) => {
                 config.welcomeMessage = msg.text;
                 saveConfig(config);
                 delete userStates[userId];
-                await updateMessage(chatId, userState.messageId, '✅ Message d\'accueil mis à jour!', {
-                    reply_markup: getAdminKeyboard()
-                });
+                await updateMessage(chatId, userState.messageId, '✅ Message d\'accueil mis à jour!');
+                
+                // Retour automatique au menu après 2 secondes
+                setTimeout(async () => {
+                    await updateMessage(chatId, userState.messageId, '🔧 Menu Administrateur', {
+                        reply_markup: getAdminKeyboard()
+                    });
+                }, 2000);
                 break;
 
             case 'editing_info':
                 config.infoText = msg.text;
                 saveConfig(config);
                 delete userStates[userId];
-                await updateMessage(chatId, userState.messageId, '✅ Texte d\'informations mis à jour!', {
-                    reply_markup: getAdminKeyboard()
-                });
+                await updateMessage(chatId, userState.messageId, '✅ Texte d\'informations mis à jour!');
+                
+                // Retour automatique au menu après 2 secondes
+                setTimeout(async () => {
+                    await updateMessage(chatId, userState.messageId, '🔧 Menu Administrateur', {
+                        reply_markup: getAdminKeyboard()
+                    });
+                }, 2000);
                 break;
 
             case 'editing_miniapp_name':
@@ -648,25 +777,71 @@ bot.on('message', async (msg) => {
                         show_alert: true
                     });
                 } else {
-                    admins.add(newAdminId);
-                    saveAdmins();
-                    delete userStates[userId];
-                    
-                    const adminsList = Array.from(admins).map(id => {
-                        if (id === ADMIN_ID) return `👑 ${id} (Principal)`;
-                        return `👤 ${id}`;
-                    }).join('\n');
-                    
-                    await updateMessage(chatId, userState.messageId, 
-                        `✅ Administrateur ajouté!\n\n👥 Administrateurs actuels:\n\n${adminsList}`, {
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: '➕ Ajouter un admin', callback_data: 'admin_add_admin' }],
-                                [{ text: '➖ Retirer un admin', callback_data: 'admin_remove_admin' }],
-                                [{ text: '⬅️ Retour', callback_data: 'admin_menu' }]
-                            ]
+                    // Vérifier si l'utilisateur existe
+                    try {
+                        const newAdminChat = await bot.getChat(newAdminId);
+                        const newAdminName = newAdminChat.first_name + (newAdminChat.last_name ? ` ${newAdminChat.last_name}` : '');
+                        const newAdminUsername = newAdminChat.username ? `@${newAdminChat.username}` : '';
+                        
+                        admins.add(newAdminId);
+                        saveAdmins();
+                        delete userStates[userId];
+                        
+                        // Notifier le nouvel administrateur
+                        try {
+                            await bot.sendMessage(newAdminId, 
+                                `🎉 **Félicitations!**\n\n` +
+                                `Vous avez été promu administrateur du bot.\n` +
+                                `Utilisez /admin pour accéder au menu administrateur.`, 
+                                { parse_mode: 'Markdown' }
+                            );
+                        } catch (error) {
+                            // L'utilisateur n'a peut-être pas démarré le bot
                         }
-                    });
+                        
+                        const adminsList = await Promise.all(Array.from(admins).map(async (id) => {
+                            try {
+                                const chat = await bot.getChat(id);
+                                const name = chat.first_name + (chat.last_name ? ` ${chat.last_name}` : '');
+                                const username = chat.username ? `@${chat.username}` : '';
+                                if (id === ADMIN_ID) {
+                                    return `👑 **${name}**${username ? ` (${username})` : ''}\n   └─ ID: \`${id}\` _(Principal)_`;
+                                }
+                                return `👤 **${name}**${username ? ` (${username})` : ''}\n   └─ ID: \`${id}\``;
+                            } catch (error) {
+                                if (id === ADMIN_ID) return `👑 ID: \`${id}\` _(Principal)_`;
+                                return `👤 ID: \`${id}\``;
+                            }
+                        }));
+                        
+                        const adminCount = admins.size;
+                        await updateMessage(chatId, userState.messageId, 
+                            `✅ **Administrateur ajouté avec succès!**\n\n` +
+                            `👤 **Nouvel admin:** ${newAdminName}${newAdminUsername ? ` (${newAdminUsername})` : ''}\n\n` +
+                            `📊 Total: ${adminCount} administrateur${adminCount > 1 ? 's' : ''}\n\n` +
+                            `**Liste des administrateurs:**\n${adminsList.join('\n\n')}`, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '➕ Ajouter un admin', callback_data: 'admin_add_admin' }],
+                                    [{ text: '➖ Retirer un admin', callback_data: 'admin_remove_admin' }],
+                                    [{ text: '⬅️ Retour', callback_data: 'admin_menu' }]
+                                ]
+                            }
+                        });
+                    } catch (error) {
+                        await updateMessage(chatId, userState.messageId, 
+                            `❌ **Erreur**\n\n` +
+                            `Impossible de trouver l'utilisateur avec l'ID: ${newAdminId}\n` +
+                            `Assurez-vous que l'utilisateur a démarré le bot avec /start`, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [[
+                                    { text: '⬅️ Retour', callback_data: 'admin_manage_admins' }
+                                ]]
+                            }
+                        });
+                    }
                 }
                 break;
         }

@@ -51,6 +51,7 @@ function getAdminKeyboard() {
             [{ text: "ℹ️ Modifier les informations", callback_data: "admin_edit_info" }],
             [{ text: "📢 Envoyer un message à tous", callback_data: "admin_broadcast" }],
             [{ text: "👥 Gérer les administrateurs", callback_data: "admin_manage_admins" }],
+            [{ text: "📊 Statistiques du bot", callback_data: "admin_stats" }],
             [{ text: "❌ Fermer", callback_data: "admin_close" }]
         ]
     };
