@@ -3,7 +3,6 @@ services:
   - type: web
     name: telegram-bot-web
     env: node
-    rootDir: telegram-bot
     buildCommand: npm install
     startCommand: node bot-webhook.js
     envVars:
