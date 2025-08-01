@@ -1,0 +1,26 @@
+services:
+  # Pour un Web Service GRATUIT (avec webhooks)
+  - type: web
+    name: telegram-bot-web
+    env: node
+    buildCommand: npm install
+    startCommand: node bot-webhook.js
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+        
+  # OU pour un Background Worker PAYANT (7$/mois)
+  # - type: background
+  #   name: telegram-bot
+  #   env: node
+  #   buildCommand: npm install
+  #   startCommand: npm start
+  #   envVars:
+  #     - key: BOT_TOKEN
+  #       sync: false
+  #     - key: ADMIN_ID
+  #       sync: false
