@@ -1,0 +1,22 @@
+{
+  "welcomeMessage": "🎉 Bienvenue {firstname} ! \n\n✨ Je suis votre nouveau bot assistant.\n\n🚀 Explorez mes fonctionnalités ci-dessous !",
+  "welcomeImage": "",
+  "infoText": "ℹ️ <b>À propos de ce bot</b>\n\n📱 Version: 1.0\n👨‍💻 Développé avec ❤️\n\n💡 <i>Personnalisez ce message dans le menu admin</i>",
+  "miniApp": {
+    "text": "🎮 Ouvrir l'application",
+    "url": ""
+  },
+  "socialNetworks": [
+    {
+      "name": "Telegram",
+      "url": "https://t.me/votre_channel",
+      "emoji": "📢"
+    },
+    {
+      "name": "Support",
+      "url": "https://t.me/votre_support",
+      "emoji": "💬"
+    }
+  ],
+  "socialButtonsPerRow": 2
+}
