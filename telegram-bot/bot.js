@@ -2,20 +2,8 @@ require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs-extra');
 const path = require('path');
-const http = require('http');
 const { loadConfig, saveConfig, getImagePath, IMAGES_DIR } = require('./config');
 const { getMainKeyboard, getAdminKeyboard, getSocialManageKeyboard, getConfirmKeyboard } = require('./keyboards');
-
-// Créer un serveur HTTP simple pour Render
-const PORT = process.env.PORT || 3000;
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Bot Telegram is running!');
-});
-
-server.listen(PORT, () => {
-    console.log(`🌐 Serveur HTTP démarré sur le port ${PORT}`);
-});
 
 // Vérifier les variables d'environnement
 if (!process.env.BOT_TOKEN) {

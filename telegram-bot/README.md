@@ -131,3 +131,35 @@ Pour toute question ou problème, vérifiez d'abord que :
 - Les dépendances sont installées (`npm install`)
 - Le fichier `.env` est correctement configuré
 - Le bot a été créé via BotFather et est actif
+
+## 🚀 Déploiement sur Render
+
+### 1. Préparer le code
+- Assurez-vous que votre code est sur GitHub, GitLab ou Bitbucket
+- Le fichier `render.yaml` est déjà configuré pour le déploiement
+
+### 2. Créer un nouveau service sur Render
+1. Allez sur [render.com](https://render.com)
+2. Connectez votre compte GitHub/GitLab
+3. Cliquez sur "New +" → "Background Worker"
+4. Sélectionnez votre repository
+5. Render détectera automatiquement le fichier `render.yaml`
+
+### 3. Configurer les variables d'environnement
+Dans les paramètres du service Render, ajoutez :
+- `BOT_TOKEN` : Votre token de bot Telegram
+- `ADMIN_ID` : Votre ID utilisateur Telegram
+
+### 4. Déployer
+- Cliquez sur "Create Background Worker"
+- Render construira et démarrera automatiquement votre bot
+
+### 5. Vérifier le fonctionnement
+- Vérifiez les logs dans le dashboard Render
+- Testez votre bot sur Telegram avec `/start`
+
+### Notes importantes pour Render
+- Le bot est déployé comme "Background Worker" (pas Web Service)
+- Render redémarre automatiquement le bot en cas de crash
+- Les images uploadées seront perdues lors des redéploiements (utilisez un service de stockage externe pour la persistance)
+- La version gratuite de Render peut avoir des limitations
