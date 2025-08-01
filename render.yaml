@@ -4,7 +4,7 @@ services:
     name: telegram-bot-web
     env: node
     buildCommand: npm install
-    startCommand: node bot-webhook.js
+    startCommand: npm run webhook
     envVars:
       - key: BOT_TOKEN
         sync: false

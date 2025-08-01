@@ -5,6 +5,7 @@
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
+    "webhook": "node bot-webhook.js",
     "dev": "nodemon bot.js"
   },
   "dependencies": {
