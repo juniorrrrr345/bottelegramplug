@@ -144,8 +144,20 @@ async function updateMessage(chatId, messageId, text, options = {}) {
 }
 
 // Fonction pour envoyer le message d'accueil
-async function sendWelcomeMessage(chatId, editMessageId = null) {
+async function sendWelcomeMessage(chatId, editMessageId = null, userInfo = null) {
     try {
+        // Personnaliser le message avec le nom de l'utilisateur
+        let personalizedMessage = config.welcomeMessage || 'Bienvenue !';
+        
+        // Si on a les infos de l'utilisateur, remplacer les variables
+        if (userInfo) {
+            personalizedMessage = personalizedMessage
+                .replace(/{firstname}/gi, userInfo.first_name || '')
+                .replace(/{lastname}/gi, userInfo.last_name || '')
+                .replace(/{username}/gi, userInfo.username ? `@${userInfo.username}` : '')
+                .replace(/{fullname}/gi, `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim());
+        }
+        
         const options = {
             reply_markup: getMainKeyboard(config),
             parse_mode: 'HTML'
@@ -156,23 +168,23 @@ async function sendWelcomeMessage(chatId, editMessageId = null) {
             if (fs.existsSync(imagePath)) {
                 // Avec image, on doit envoyer un nouveau message
                 await sendNewPhoto(chatId, imagePath, {
-                    caption: config.welcomeMessage,
+                    caption: personalizedMessage,
                     ...options
                 });
             } else {
                 // Sans image valide, utiliser du texte
                 if (editMessageId && activeMessages[chatId] === editMessageId) {
-                    await updateMessage(chatId, editMessageId, config.welcomeMessage, options);
+                    await updateMessage(chatId, editMessageId, personalizedMessage, options);
                 } else {
-                    await sendNewMessage(chatId, config.welcomeMessage, options);
+                    await sendNewMessage(chatId, personalizedMessage, options);
                 }
             }
         } else {
             // Sans image, on peut éditer ou envoyer un nouveau message
             if (editMessageId && activeMessages[chatId] === editMessageId) {
-                await updateMessage(chatId, editMessageId, config.welcomeMessage, options);
+                await updateMessage(chatId, editMessageId, personalizedMessage, options);
             } else {
-                await sendNewMessage(chatId, config.welcomeMessage, options);
+                await sendNewMessage(chatId, personalizedMessage, options);
             }
         }
     } catch (error) {
@@ -195,8 +207,8 @@ bot.onText(/\/start/, async (msg) => {
         await bot.deleteMessage(chatId, msg.message_id);
     } catch (error) {}
     
-    // Envoyer le message d'accueil (supprimera automatiquement l'ancien)
-    await sendWelcomeMessage(chatId);
+    // Envoyer le message d'accueil avec les infos de l'utilisateur
+    await sendWelcomeMessage(chatId, null, msg.from);
 });
 
 // Commande /id pour obtenir son ID
@@ -296,7 +308,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'back_to_main':
-                await sendWelcomeMessage(chatId, messageId);
+                await sendWelcomeMessage(chatId, messageId, callbackQuery.from);
                 break;
 
             case 'admin_menu':
@@ -310,7 +322,13 @@ bot.on('callback_query', async (callbackQuery) => {
                 const currentWelcome = config.welcomeMessage || 'Aucun message configuré';
                 await updateMessage(chatId, messageId, 
                     `📝 **Message d'accueil actuel:**\n\n${currentWelcome}\n\n` +
-                    `💡 *Envoyez le nouveau message d'accueil pour le remplacer*`, {
+                    `💡 **Variables disponibles:**\n` +
+                    `• \`{firstname}\` - Prénom de l'utilisateur\n` +
+                    `• \`{lastname}\` - Nom de famille\n` +
+                    `• \`{username}\` - @username\n` +
+                    `• \`{fullname}\` - Nom complet\n\n` +
+                    `📌 **Exemple:** Bienvenue {firstname} ! 👋\n\n` +
+                    `_Envoyez le nouveau message d'accueil pour le remplacer_`, {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [[
