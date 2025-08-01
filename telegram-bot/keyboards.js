@@ -18,21 +18,21 @@ function getMainKeyboard(config) {
     
     // Boutons réseaux sociaux
     if (config.socialNetworks && config.socialNetworks.length > 0) {
-        const socialRow = [];
+        const buttonsPerRow = config.socialButtonsPerRow || 3;
+        let socialRow = [];
+        
         config.socialNetworks.forEach((network, index) => {
-            // Maximum 3 boutons par ligne
-            if (index > 0 && index % 3 === 0) {
-                keyboard.push([...socialRow]);
-                socialRow.length = 0;
-            }
             socialRow.push({
                 text: `${network.emoji || "🔗"} ${network.name}`,
                 url: network.url
             });
+            
+            // Si on a atteint le nombre de boutons par ligne, ajouter la ligne
+            if (socialRow.length === buttonsPerRow || index === config.socialNetworks.length - 1) {
+                keyboard.push([...socialRow]);
+                socialRow = [];
+            }
         });
-        if (socialRow.length > 0) {
-            keyboard.push(socialRow);
-        }
     }
     
     return {
@@ -75,6 +75,12 @@ function getSocialManageKeyboard(config) {
         callback_data: "admin_add_social"
     }]);
     
+    // Bouton pour configurer la disposition
+    keyboard.push([{
+        text: `📐 Disposition: ${config.socialButtonsPerRow || 3} par ligne`,
+        callback_data: "admin_social_layout"
+    }]);
+    
     // Bouton retour
     keyboard.push([{
         text: "⬅️ Retour",
@@ -83,6 +89,27 @@ function getSocialManageKeyboard(config) {
     
     return {
         inline_keyboard: keyboard
+    };
+}
+
+// Clavier pour choisir la disposition des boutons
+function getSocialLayoutKeyboard() {
+    return {
+        inline_keyboard: [
+            [
+                { text: "1️⃣", callback_data: "social_layout_1" },
+                { text: "2️⃣", callback_data: "social_layout_2" },
+                { text: "3️⃣", callback_data: "social_layout_3" },
+                { text: "4️⃣", callback_data: "social_layout_4" }
+            ],
+            [
+                { text: "5️⃣", callback_data: "social_layout_5" },
+                { text: "6️⃣", callback_data: "social_layout_6" },
+                { text: "7️⃣", callback_data: "social_layout_7" },
+                { text: "8️⃣", callback_data: "social_layout_8" }
+            ],
+            [{ text: "⬅️ Retour", callback_data: "admin_manage_social" }]
+        ]
     };
 }
 
@@ -102,5 +129,6 @@ module.exports = {
     getMainKeyboard,
     getAdminKeyboard,
     getSocialManageKeyboard,
+    getSocialLayoutKeyboard,
     getConfirmKeyboard
 };

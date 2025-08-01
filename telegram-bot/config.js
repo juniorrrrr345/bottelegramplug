@@ -20,14 +20,17 @@ const defaultConfig = {
         { name: "Twitter", url: "https://twitter.com", emoji: "🐦" },
         { name: "Instagram", url: "https://instagram.com", emoji: "📷" },
         { name: "Facebook", url: "https://facebook.com", emoji: "👍" }
-    ]
+    ],
+    socialButtonsPerRow: 3 // Nombre de boutons par ligne (1-8)
 };
 
 // Charger la configuration
 function loadConfig() {
     try {
         if (fs.existsSync(CONFIG_FILE)) {
-            return fs.readJsonSync(CONFIG_FILE);
+            const savedConfig = fs.readJsonSync(CONFIG_FILE);
+            // Fusionner avec la config par défaut pour ajouter les nouvelles propriétés
+            return { ...defaultConfig, ...savedConfig };
         }
     } catch (error) {
         console.error('Erreur lors du chargement de la configuration:', error);

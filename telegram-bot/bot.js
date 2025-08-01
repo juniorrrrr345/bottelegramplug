@@ -493,9 +493,10 @@ bot.on('message', async (msg) => {
                     }
                 }
                 
+                const totalUsers = users.size - 1; // -1 pour exclure l'admin
                 delete userStates[userId];
                 await updateMessage(chatId, userState.messageId, 
-                    `✅ Message diffusé!\n\n📊 Statistiques:\n✅ Envoyés: ${successCount}\n❌ Échecs: ${failCount}`, {
+                    `✅ Message diffusé!\n\n📊 Statistiques:\n👥 Utilisateurs totaux: ${totalUsers}\n✅ Envoyés: ${successCount}\n❌ Échecs: ${failCount}`, {
                     reply_markup: getAdminKeyboard()
                 });
                 break;
