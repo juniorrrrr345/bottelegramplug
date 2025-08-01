@@ -49,6 +49,7 @@ function getAdminKeyboard() {
             [{ text: "📱 Modifier la mini application", callback_data: "admin_edit_miniapp" }],
             [{ text: "🌐 Gérer les réseaux sociaux", callback_data: "admin_manage_social" }],
             [{ text: "ℹ️ Modifier les informations", callback_data: "admin_edit_info" }],
+            [{ text: "📢 Envoyer un message à tous", callback_data: "admin_broadcast" }],
             [{ text: "❌ Fermer", callback_data: "admin_close" }]
         ]
     };
