@@ -537,15 +537,55 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'admin_export_users':
-                // Créer une liste des utilisateurs pour l'export
-                const usersList = Array.from(users).map(userId => {
-                    const isAdmin = admins.has(userId);
-                    return `${userId}${isAdmin ? ' (Admin)' : ''}`;
-                }).join('\n');
+                // Créer une liste détaillée des utilisateurs
+                const usersDetails = await Promise.all(Array.from(users).map(async (userId) => {
+                    try {
+                        const userChat = await bot.getChat(userId);
+                        const isAdmin = admins.has(userId);
+                        const firstName = userChat.first_name || '';
+                        const lastName = userChat.last_name || '';
+                        const username = userChat.username ? `@${userChat.username}` : 'Pas de username';
+                        const fullName = `${firstName} ${lastName}`.trim() || 'Sans nom';
+                        
+                        return `ID: ${userId}${isAdmin ? ' [ADMIN]' : ''}\n` +
+                               `Nom: ${fullName}\n` +
+                               `Username: ${username}\n` +
+                               `Type: ${userChat.type}\n` +
+                               `----------------------------`;
+                    } catch (error) {
+                        // Si on ne peut pas obtenir les infos (utilisateur a bloqué le bot)
+                        return `ID: ${userId}${admins.has(userId) ? ' [ADMIN]' : ''}\n` +
+                               `Status: Utilisateur inaccessible (a peut-être bloqué le bot)\n` +
+                               `----------------------------`;
+                    }
+                }));
                 
-                await bot.sendDocument(chatId, Buffer.from(usersList), {
+                // Créer le contenu du fichier avec des statistiques
+                const exportDate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+                const totalUsers = users.size;
+                const totalAdmins = admins.size;
+                const regularUsers = totalUsers - totalAdmins;
+                
+                const fileContent = `📊 EXPORT DES UTILISATEURS DU BOT\n` +
+                    `📅 Date d'export: ${exportDate}\n` +
+                    `============================\n\n` +
+                    `STATISTIQUES:\n` +
+                    `- Total utilisateurs: ${totalUsers}\n` +
+                    `- Utilisateurs réguliers: ${regularUsers}\n` +
+                    `- Administrateurs: ${totalAdmins}\n` +
+                    `============================\n\n` +
+                    `LISTE DÉTAILLÉE:\n\n` +
+                    usersDetails.join('\n\n');
+                
+                // Envoyer le fichier
+                await bot.sendDocument(chatId, Buffer.from(fileContent, 'utf-8'), {
                     filename: `users_export_${new Date().toISOString().split('T')[0]}.txt`,
-                    caption: `📥 Export des ${users.size} utilisateurs`
+                    caption: `📥 **Export complet des utilisateurs**\n\n` +
+                             `📊 Total: ${totalUsers} utilisateurs\n` +
+                             `👤 Réguliers: ${regularUsers}\n` +
+                             `👑 Admins: ${totalAdmins}`
+                }, {
+                    parse_mode: 'Markdown'
                 });
                 break;
 
