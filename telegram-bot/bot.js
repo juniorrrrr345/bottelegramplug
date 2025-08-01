@@ -22,8 +22,8 @@ const ADMIN_ID = parseInt(process.env.ADMIN_ID);
 
 // État des utilisateurs (pour gérer les conversations)
 const userStates = {};
-// Stocker les IDs des derniers messages pour chaque utilisateur
-const lastMessages = {};
+// Stocker l'ID du dernier message pour chaque chat (un seul message actif par chat)
+const activeMessages = {};
 // Stocker les utilisateurs qui ont interagi avec le bot
 const users = new Set();
 
@@ -53,51 +53,71 @@ function saveUsers() {
 
 loadUsers();
 
-// Fonction pour supprimer le dernier message d'un utilisateur
-async function deleteLastMessage(chatId) {
-    if (lastMessages[chatId]) {
+// Fonction pour supprimer tous les messages actifs d'un chat
+async function deleteActiveMessage(chatId) {
+    if (activeMessages[chatId]) {
         try {
-            await bot.deleteMessage(chatId, lastMessages[chatId]);
+            await bot.deleteMessage(chatId, activeMessages[chatId]);
         } catch (error) {
-            // Ignorer l'erreur si le message est déjà supprimé
+            // Ignorer si le message est déjà supprimé
         }
-        delete lastMessages[chatId];
+        delete activeMessages[chatId];
     }
 }
 
-// Fonction pour envoyer un message et stocker son ID
-async function sendMessageAndStore(chatId, text, options = {}) {
-    await deleteLastMessage(chatId);
-    const message = await bot.sendMessage(chatId, text, options);
-    lastMessages[chatId] = message.message_id;
-    return message;
-}
-
-// Fonction pour envoyer une photo et stocker son ID
-async function sendPhotoAndStore(chatId, photo, options = {}) {
-    await deleteLastMessage(chatId);
-    const message = await bot.sendPhoto(chatId, photo, options);
-    lastMessages[chatId] = message.message_id;
-    return message;
-}
-
-// Fonction pour éditer un message
-async function editMessageAndStore(chatId, messageId, text, options = {}) {
+// Fonction pour envoyer un message et supprimer l'ancien
+async function sendNewMessage(chatId, text, options = {}) {
+    // Supprimer l'ancien message actif
+    await deleteActiveMessage(chatId);
+    
+    // Envoyer le nouveau message
     try {
-        await bot.editMessageText(text, {
-            chat_id: chatId,
-            message_id: messageId,
-            ...options
-        });
-        lastMessages[chatId] = messageId;
+        const message = await bot.sendMessage(chatId, text, options);
+        activeMessages[chatId] = message.message_id;
+        return message;
     } catch (error) {
-        // Si l'édition échoue, envoyer un nouveau message
-        await sendMessageAndStore(chatId, text, options);
+        console.error('Erreur lors de l\'envoi du message:', error);
+    }
+}
+
+// Fonction pour envoyer une photo et supprimer l'ancien message
+async function sendNewPhoto(chatId, photo, options = {}) {
+    // Supprimer l'ancien message actif
+    await deleteActiveMessage(chatId);
+    
+    // Envoyer la nouvelle photo
+    try {
+        const message = await bot.sendPhoto(chatId, photo, options);
+        activeMessages[chatId] = message.message_id;
+        return message;
+    } catch (error) {
+        console.error('Erreur lors de l\'envoi de la photo:', error);
+    }
+}
+
+// Fonction pour éditer le message actif ou en envoyer un nouveau
+async function updateMessage(chatId, messageId, text, options = {}) {
+    try {
+        // Vérifier si c'est bien le message actif
+        if (activeMessages[chatId] === messageId) {
+            await bot.editMessageText(text, {
+                chat_id: chatId,
+                message_id: messageId,
+                ...options
+            });
+            return { message_id: messageId };
+        } else {
+            // Si ce n'est pas le message actif, envoyer un nouveau message
+            return await sendNewMessage(chatId, text, options);
+        }
+    } catch (error) {
+        // En cas d'erreur, envoyer un nouveau message
+        return await sendNewMessage(chatId, text, options);
     }
 }
 
 // Fonction pour envoyer le message d'accueil
-async function sendWelcomeMessage(chatId, messageId = null) {
+async function sendWelcomeMessage(chatId, editMessageId = null) {
     try {
         const options = {
             reply_markup: getMainKeyboard(config),
@@ -107,30 +127,30 @@ async function sendWelcomeMessage(chatId, messageId = null) {
         if (config.welcomeImage) {
             const imagePath = getImagePath(config.welcomeImage);
             if (fs.existsSync(imagePath)) {
-                if (messageId) {
-                    await deleteLastMessage(chatId);
-                }
-                await sendPhotoAndStore(chatId, imagePath, {
+                // Avec image, on doit envoyer un nouveau message
+                await sendNewPhoto(chatId, imagePath, {
                     caption: config.welcomeMessage,
                     ...options
                 });
             } else {
-                if (messageId) {
-                    await editMessageAndStore(chatId, messageId, config.welcomeMessage, options);
+                // Sans image valide, utiliser du texte
+                if (editMessageId && activeMessages[chatId] === editMessageId) {
+                    await updateMessage(chatId, editMessageId, config.welcomeMessage, options);
                 } else {
-                    await sendMessageAndStore(chatId, config.welcomeMessage, options);
+                    await sendNewMessage(chatId, config.welcomeMessage, options);
                 }
             }
         } else {
-            if (messageId) {
-                await editMessageAndStore(chatId, messageId, config.welcomeMessage, options);
+            // Sans image, on peut éditer ou envoyer un nouveau message
+            if (editMessageId && activeMessages[chatId] === editMessageId) {
+                await updateMessage(chatId, editMessageId, config.welcomeMessage, options);
             } else {
-                await sendMessageAndStore(chatId, config.welcomeMessage, options);
+                await sendNewMessage(chatId, config.welcomeMessage, options);
             }
         }
     } catch (error) {
         console.error('Erreur lors de l\'envoi du message d\'accueil:', error);
-        await sendMessageAndStore(chatId, '❌ Une erreur s\'est produite. Veuillez réessayer.');
+        await sendNewMessage(chatId, '❌ Une erreur s\'est produite. Veuillez réessayer.');
     }
 }
 
@@ -148,6 +168,7 @@ bot.onText(/\/start/, async (msg) => {
         await bot.deleteMessage(chatId, msg.message_id);
     } catch (error) {}
     
+    // Envoyer le message d'accueil (supprimera automatiquement l'ancien)
     await sendWelcomeMessage(chatId);
 });
 
@@ -162,11 +183,11 @@ bot.onText(/\/admin/, async (msg) => {
     } catch (error) {}
 
     if (userId !== ADMIN_ID) {
-        await sendMessageAndStore(chatId, '❌ Vous n\'êtes pas autorisé à accéder au menu administrateur.');
+        await sendNewMessage(chatId, '❌ Vous n\'êtes pas autorisé à accéder au menu administrateur.');
         return;
     }
 
-    await sendMessageAndStore(chatId, '🔧 Menu Administrateur', {
+    await sendNewMessage(chatId, '🔧 Menu Administrateur', {
         reply_markup: getAdminKeyboard()
     });
 });
@@ -183,7 +204,10 @@ bot.on('callback_query', async (callbackQuery) => {
 
     // Vérifier les permissions admin pour les actions admin
     if (data.startsWith('admin_') && userId !== ADMIN_ID) {
-        await bot.sendMessage(chatId, '❌ Vous n\'êtes pas autorisé à effectuer cette action.');
+        await bot.answerCallbackQuery(callbackQuery.id, {
+            text: '❌ Vous n\'êtes pas autorisé à effectuer cette action.',
+            show_alert: true
+        });
         return;
     }
 
@@ -203,16 +227,15 @@ bot.on('callback_query', async (callbackQuery) => {
                 if (config.welcomeImage) {
                     const imagePath = getImagePath(config.welcomeImage);
                     if (fs.existsSync(imagePath)) {
-                        await bot.deleteMessage(chatId, messageId);
-                        await sendPhotoAndStore(chatId, imagePath, {
+                        await sendNewPhoto(chatId, imagePath, {
                             caption: config.infoText,
                             ...infoOptions
                         });
                     } else {
-                        await editMessageAndStore(chatId, messageId, config.infoText, infoOptions);
+                        await updateMessage(chatId, messageId, config.infoText, infoOptions);
                     }
                 } else {
-                    await editMessageAndStore(chatId, messageId, config.infoText, infoOptions);
+                    await updateMessage(chatId, messageId, config.infoText, infoOptions);
                 }
                 break;
 
@@ -221,14 +244,14 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'admin_menu':
-                await editMessageAndStore(chatId, messageId, '🔧 Menu Administrateur', {
+                await updateMessage(chatId, messageId, '🔧 Menu Administrateur', {
                     reply_markup: getAdminKeyboard()
                 });
                 break;
 
             case 'admin_edit_welcome':
                 userStates[userId] = { action: 'editing_welcome', messageId: messageId };
-                await editMessageAndStore(chatId, messageId, '📝 Envoyez le nouveau message d\'accueil:', {
+                await updateMessage(chatId, messageId, '📝 Envoyez le nouveau message d\'accueil:', {
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_menu' }
@@ -239,7 +262,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
             case 'admin_edit_photo':
                 userStates[userId] = { action: 'editing_photo', messageId: messageId };
-                await editMessageAndStore(chatId, messageId, '🖼️ Envoyez la nouvelle photo d\'accueil:', {
+                await updateMessage(chatId, messageId, '🖼️ Envoyez la nouvelle photo d\'accueil:', {
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_menu' }
@@ -249,8 +272,8 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'admin_edit_miniapp':
-                userStates[userId] = { action: 'editing_miniapp_url', messageId: messageId };
-                await editMessageAndStore(chatId, messageId, '📱 Envoyez l\'URL de la mini application (ou "supprimer" pour la retirer):', {
+                userStates[userId] = { action: 'editing_miniapp_name', messageId: messageId };
+                await updateMessage(chatId, messageId, '📱 Entrez le nom du bouton pour la mini application:', {
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_menu' }
@@ -260,14 +283,14 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'admin_manage_social':
-                await editMessageAndStore(chatId, messageId, '🌐 Gestion des réseaux sociaux', {
+                await updateMessage(chatId, messageId, '🌐 Gestion des réseaux sociaux', {
                     reply_markup: getSocialManageKeyboard(config)
                 });
                 break;
 
             case 'admin_add_social':
                 userStates[userId] = { action: 'adding_social_name', messageId: messageId };
-                await editMessageAndStore(chatId, messageId, '➕ Entrez le nom du réseau social:', {
+                await updateMessage(chatId, messageId, '➕ Entrez le nom du réseau social:', {
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_manage_social' }
@@ -278,7 +301,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
             case 'admin_edit_info':
                 userStates[userId] = { action: 'editing_info', messageId: messageId };
-                await editMessageAndStore(chatId, messageId, 'ℹ️ Envoyez le nouveau texte pour la section informations:', {
+                await updateMessage(chatId, messageId, 'ℹ️ Envoyez le nouveau texte pour la section informations:', {
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_menu' }
@@ -289,7 +312,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
             case 'admin_broadcast':
                 userStates[userId] = { action: 'broadcast_message', messageId: messageId };
-                await editMessageAndStore(chatId, messageId, '📢 Envoyez le message à diffuser à tous les utilisateurs:', {
+                await updateMessage(chatId, messageId, '📢 Envoyez le message à diffuser à tous les utilisateurs:', {
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_menu' }
@@ -299,13 +322,15 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'admin_close':
-                await bot.deleteMessage(chatId, messageId);
-                delete lastMessages[chatId];
+                await deleteActiveMessage(chatId);
                 break;
 
             case 'cancel':
                 delete userStates[userId];
-                await bot.sendMessage(chatId, '❌ Action annulée.');
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: '❌ Action annulée',
+                    show_alert: false
+                });
                 break;
 
             default:
@@ -329,7 +354,10 @@ bot.on('callback_query', async (callbackQuery) => {
         }
     } catch (error) {
         console.error('Erreur lors du traitement du callback:', error);
-        await bot.sendMessage(chatId, '❌ Une erreur s\'est produite. Veuillez réessayer.');
+        await bot.answerCallbackQuery(callbackQuery.id, {
+            text: '❌ Une erreur s\'est produite',
+            show_alert: true
+        });
     }
 });
 
@@ -355,7 +383,7 @@ bot.on('message', async (msg) => {
                 config.welcomeMessage = msg.text;
                 saveConfig(config);
                 delete userStates[userId];
-                await editMessageAndStore(chatId, userState.messageId, '✅ Message d\'accueil mis à jour!', {
+                await updateMessage(chatId, userState.messageId, '✅ Message d\'accueil mis à jour!', {
                     reply_markup: getAdminKeyboard()
                 });
                 break;
@@ -364,8 +392,26 @@ bot.on('message', async (msg) => {
                 config.infoText = msg.text;
                 saveConfig(config);
                 delete userStates[userId];
-                await editMessageAndStore(chatId, userState.messageId, '✅ Texte d\'informations mis à jour!', {
+                await updateMessage(chatId, userState.messageId, '✅ Texte d\'informations mis à jour!', {
                     reply_markup: getAdminKeyboard()
+                });
+                break;
+
+            case 'editing_miniapp_name':
+                if (!config.miniApp) {
+                    config.miniApp = {};
+                }
+                config.miniApp.text = msg.text;
+                userStates[userId] = { 
+                    action: 'editing_miniapp_url', 
+                    messageId: userState.messageId 
+                };
+                await updateMessage(chatId, userState.messageId, '📱 Entrez l\'URL de la mini application (ou "supprimer" pour la retirer):', {
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '❌ Annuler', callback_data: 'admin_menu' }
+                        ]]
+                    }
                 });
                 break;
 
@@ -375,24 +421,9 @@ bot.on('message', async (msg) => {
                 } else {
                     config.miniApp.url = msg.text;
                 }
-                userStates[userId] = { 
-                    action: 'editing_miniapp_text', 
-                    messageId: userState.messageId 
-                };
-                await editMessageAndStore(chatId, userState.messageId, '📱 Entrez le texte du bouton pour la mini application:', {
-                    reply_markup: {
-                        inline_keyboard: [[
-                            { text: '❌ Annuler', callback_data: 'admin_menu' }
-                        ]]
-                    }
-                });
-                break;
-
-            case 'editing_miniapp_text':
-                config.miniApp.text = msg.text;
                 saveConfig(config);
                 delete userStates[userId];
-                await editMessageAndStore(chatId, userState.messageId, '✅ Mini application mise à jour!', {
+                await updateMessage(chatId, userState.messageId, '✅ Mini application mise à jour!', {
                     reply_markup: getAdminKeyboard()
                 });
                 break;
@@ -403,7 +434,7 @@ bot.on('message', async (msg) => {
                     socialName: msg.text,
                     messageId: userState.messageId
                 };
-                await editMessageAndStore(chatId, userState.messageId, '🔗 Entrez l\'URL du réseau social:', {
+                await updateMessage(chatId, userState.messageId, '🔗 Entrez l\'URL du réseau social:', {
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_manage_social' }
@@ -418,7 +449,7 @@ bot.on('message', async (msg) => {
                     action: 'adding_social_emoji',
                     socialUrl: msg.text
                 };
-                await editMessageAndStore(chatId, userState.messageId, '😀 Entrez un emoji pour ce réseau social (ou envoyez "skip" pour utiliser 🔗):', {
+                await updateMessage(chatId, userState.messageId, '😀 Entrez un emoji pour ce réseau social (ou envoyez "skip" pour utiliser 🔗):', {
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '❌ Annuler', callback_data: 'admin_manage_social' }
@@ -439,7 +470,7 @@ bot.on('message', async (msg) => {
                 });
                 saveConfig(config);
                 delete userStates[userId];
-                await editMessageAndStore(chatId, userState.messageId, '✅ Réseau social ajouté!', {
+                await updateMessage(chatId, userState.messageId, '✅ Réseau social ajouté!', {
                     reply_markup: getSocialManageKeyboard(config)
                 });
                 break;
@@ -449,7 +480,7 @@ bot.on('message', async (msg) => {
                 let successCount = 0;
                 let failCount = 0;
                 
-                await editMessageAndStore(chatId, userState.messageId, '📤 Envoi en cours...');
+                await updateMessage(chatId, userState.messageId, '📤 Envoi en cours...');
                 
                 for (const targetUserId of users) {
                     if (targetUserId !== userId) { // Ne pas envoyer à l'admin
@@ -463,7 +494,7 @@ bot.on('message', async (msg) => {
                 }
                 
                 delete userStates[userId];
-                await editMessageAndStore(chatId, userState.messageId, 
+                await updateMessage(chatId, userState.messageId, 
                     `✅ Message diffusé!\n\n📊 Statistiques:\n✅ Envoyés: ${successCount}\n❌ Échecs: ${failCount}`, {
                     reply_markup: getAdminKeyboard()
                 });
@@ -471,7 +502,7 @@ bot.on('message', async (msg) => {
         }
     } catch (error) {
         console.error('Erreur lors du traitement du message:', error);
-        await bot.sendMessage(chatId, '❌ Une erreur s\'est produite. Veuillez réessayer.');
+        await sendNewMessage(chatId, '❌ Une erreur s\'est produite. Veuillez réessayer.');
     }
 });
 
@@ -523,14 +554,14 @@ bot.on('photo', async (msg) => {
                 saveConfig(config);
                 delete userStates[userId];
 
-                await editMessageAndStore(chatId, userState.messageId, '✅ Photo d\'accueil mise à jour!', {
+                await updateMessage(chatId, userState.messageId, '✅ Photo d\'accueil mise à jour!', {
                     reply_markup: getAdminKeyboard()
                 });
             });
         });
     } catch (error) {
         console.error('Erreur lors du traitement de la photo:', error);
-        await bot.sendMessage(chatId, '❌ Une erreur s\'est produite lors du traitement de la photo.');
+        await sendNewMessage(chatId, '❌ Une erreur s\'est produite lors du traitement de la photo.');
     }
 });
 
