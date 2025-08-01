@@ -3,7 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs-extra');
 const path = require('path');
 const { loadConfig, saveConfig, getImagePath, IMAGES_DIR } = require('./config');
-const { getMainKeyboard, getAdminKeyboard, getSocialManageKeyboard, getConfirmKeyboard } = require('./keyboards');
+const { getMainKeyboard, getAdminKeyboard, getSocialManageKeyboard, getSocialLayoutKeyboard, getConfirmKeyboard } = require('./keyboards');
 
 // Vérifier les variables d'environnement
 if (!process.env.BOT_TOKEN) {
@@ -26,12 +26,16 @@ const userStates = {};
 const activeMessages = {};
 // Stocker les utilisateurs qui ont interagi avec le bot
 const users = new Set();
+// Stocker les administrateurs
+const admins = new Set([ADMIN_ID]);
 
 // Charger la configuration au démarrage
 let config = loadConfig();
 
 // Charger les utilisateurs sauvegardés
 const USERS_FILE = path.join(__dirname, 'users.json');
+const ADMINS_FILE = path.join(__dirname, 'admins.json');
+
 function loadUsers() {
     try {
         if (fs.existsSync(USERS_FILE)) {
@@ -51,7 +55,27 @@ function saveUsers() {
     }
 }
 
+function loadAdmins() {
+    try {
+        if (fs.existsSync(ADMINS_FILE)) {
+            const data = fs.readJsonSync(ADMINS_FILE);
+            data.forEach(adminId => admins.add(adminId));
+        }
+    } catch (error) {
+        console.error('Erreur lors du chargement des admins:', error);
+    }
+}
+
+function saveAdmins() {
+    try {
+        fs.writeJsonSync(ADMINS_FILE, Array.from(admins));
+    } catch (error) {
+        console.error('Erreur lors de la sauvegarde des admins:', error);
+    }
+}
+
 loadUsers();
+loadAdmins();
 
 // Fonction pour supprimer tous les messages actifs d'un chat
 async function deleteActiveMessage(chatId) {
@@ -182,7 +206,7 @@ bot.onText(/\/admin/, async (msg) => {
         await bot.deleteMessage(chatId, msg.message_id);
     } catch (error) {}
 
-    if (userId !== ADMIN_ID) {
+    if (!admins.has(userId)) {
         await sendNewMessage(chatId, '❌ Vous n\'êtes pas autorisé à accéder au menu administrateur.');
         return;
     }
@@ -203,7 +227,7 @@ bot.on('callback_query', async (callbackQuery) => {
     await bot.answerCallbackQuery(callbackQuery.id);
 
     // Vérifier les permissions admin pour les actions admin
-    if (data.startsWith('admin_') && userId !== ADMIN_ID) {
+    if (data.startsWith('admin_') && !admins.has(userId)) {
         await bot.answerCallbackQuery(callbackQuery.id, {
             text: '❌ Vous n\'êtes pas autorisé à effectuer cette action.',
             show_alert: true
@@ -321,6 +345,73 @@ bot.on('callback_query', async (callbackQuery) => {
                 });
                 break;
 
+            case 'admin_social_layout':
+                await updateMessage(chatId, messageId, '📐 Choisissez le nombre de boutons par ligne:', {
+                    reply_markup: getSocialLayoutKeyboard()
+                });
+                break;
+
+            case 'admin_manage_admins':
+                const adminsList = Array.from(admins).map(id => {
+                    if (id === ADMIN_ID) return `👑 ${id} (Principal)`;
+                    return `👤 ${id}`;
+                }).join('\n');
+                
+                await updateMessage(chatId, messageId, `👥 Administrateurs actuels:\n\n${adminsList}`, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '➕ Ajouter un admin', callback_data: 'admin_add_admin' }],
+                            [{ text: '➖ Retirer un admin', callback_data: 'admin_remove_admin' }],
+                            [{ text: '⬅️ Retour', callback_data: 'admin_menu' }]
+                        ]
+                    }
+                });
+                break;
+
+            case 'admin_add_admin':
+                userStates[userId] = { action: 'adding_admin', messageId: messageId };
+                await updateMessage(chatId, messageId, '👤 Envoyez l\'ID Telegram du nouvel administrateur:', {
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '❌ Annuler', callback_data: 'admin_manage_admins' }
+                        ]]
+                    }
+                });
+                break;
+
+            case 'admin_remove_admin':
+                if (admins.size <= 1) {
+                    await bot.answerCallbackQuery(callbackQuery.id, {
+                        text: '⚠️ Il doit y avoir au moins un administrateur!',
+                        show_alert: true
+                    });
+                    break;
+                }
+                
+                const removableAdmins = Array.from(admins).filter(id => id !== ADMIN_ID);
+                if (removableAdmins.length === 0) {
+                    await bot.answerCallbackQuery(callbackQuery.id, {
+                        text: '⚠️ Aucun admin supprimable. L\'admin principal ne peut pas être retiré.',
+                        show_alert: true
+                    });
+                    break;
+                }
+                
+                const removeButtons = removableAdmins.map(id => [{
+                    text: `❌ Retirer ${id}`,
+                    callback_data: `remove_admin_${id}`
+                }]);
+                
+                await updateMessage(chatId, messageId, '👥 Sélectionnez l\'admin à retirer:', {
+                    reply_markup: {
+                        inline_keyboard: [
+                            ...removeButtons,
+                            [{ text: '⬅️ Retour', callback_data: 'admin_manage_admins' }]
+                        ]
+                    }
+                });
+                break;
+
             case 'admin_close':
                 await deleteActiveMessage(chatId);
                 break;
@@ -347,6 +438,46 @@ bot.on('callback_query', async (callbackQuery) => {
                         await bot.editMessageReplyMarkup(getSocialManageKeyboard(config), {
                             chat_id: chatId,
                             message_id: messageId
+                        });
+                    }
+                }
+                // Gestion de la disposition des boutons sociaux
+                else if (data.startsWith('social_layout_')) {
+                    const buttonsPerRow = parseInt(data.replace('social_layout_', ''));
+                    config.socialButtonsPerRow = buttonsPerRow;
+                    saveConfig(config);
+                    await bot.answerCallbackQuery(callbackQuery.id, {
+                        text: `✅ Disposition mise à jour: ${buttonsPerRow} bouton(s) par ligne`,
+                        show_alert: true
+                    });
+                    await updateMessage(chatId, messageId, '🌐 Gestion des réseaux sociaux', {
+                        reply_markup: getSocialManageKeyboard(config)
+                    });
+                }
+                // Gestion de la suppression des admins
+                else if (data.startsWith('remove_admin_')) {
+                    const adminToRemove = parseInt(data.replace('remove_admin_', ''));
+                    if (admins.has(adminToRemove) && adminToRemove !== ADMIN_ID) {
+                        admins.delete(adminToRemove);
+                        saveAdmins();
+                        await bot.answerCallbackQuery(callbackQuery.id, {
+                            text: '✅ Administrateur retiré!',
+                            show_alert: true
+                        });
+                        // Retour à la liste des admins
+                        const adminsList = Array.from(admins).map(id => {
+                            if (id === ADMIN_ID) return `👑 ${id} (Principal)`;
+                            return `👤 ${id}`;
+                        }).join('\n');
+                        
+                        await updateMessage(chatId, messageId, `👥 Administrateurs actuels:\n\n${adminsList}`, {
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '➕ Ajouter un admin', callback_data: 'admin_add_admin' }],
+                                    [{ text: '➖ Retirer un admin', callback_data: 'admin_remove_admin' }],
+                                    [{ text: '⬅️ Retour', callback_data: 'admin_menu' }]
+                                ]
+                            }
                         });
                     }
                 }
@@ -483,7 +614,7 @@ bot.on('message', async (msg) => {
                 await updateMessage(chatId, userState.messageId, '📤 Envoi en cours...');
                 
                 for (const targetUserId of users) {
-                    if (targetUserId !== userId) { // Ne pas envoyer à l'admin
+                    if (!admins.has(targetUserId)) { // Ne pas envoyer aux admins
                         try {
                             await bot.sendMessage(targetUserId, `📢 Message de l'administrateur:\n\n${message}`);
                             successCount++;
@@ -493,12 +624,50 @@ bot.on('message', async (msg) => {
                     }
                 }
                 
-                const totalUsers = users.size - 1; // -1 pour exclure l'admin
+                const totalUsers = users.size - admins.size; // Exclure tous les admins
                 delete userStates[userId];
                 await updateMessage(chatId, userState.messageId, 
                     `✅ Message diffusé!\n\n📊 Statistiques:\n👥 Utilisateurs totaux: ${totalUsers}\n✅ Envoyés: ${successCount}\n❌ Échecs: ${failCount}`, {
                     reply_markup: getAdminKeyboard()
                 });
+                break;
+
+            case 'adding_admin':
+                const newAdminId = parseInt(msg.text);
+                if (isNaN(newAdminId)) {
+                    await bot.answerCallbackQuery(callbackQuery.id, {
+                        text: '❌ ID invalide. Veuillez entrer un nombre.',
+                        show_alert: true
+                    });
+                    break;
+                }
+                
+                if (admins.has(newAdminId)) {
+                    await bot.answerCallbackQuery(callbackQuery.id, {
+                        text: '⚠️ Cet utilisateur est déjà administrateur!',
+                        show_alert: true
+                    });
+                } else {
+                    admins.add(newAdminId);
+                    saveAdmins();
+                    delete userStates[userId];
+                    
+                    const adminsList = Array.from(admins).map(id => {
+                        if (id === ADMIN_ID) return `👑 ${id} (Principal)`;
+                        return `👤 ${id}`;
+                    }).join('\n');
+                    
+                    await updateMessage(chatId, userState.messageId, 
+                        `✅ Administrateur ajouté!\n\n👥 Administrateurs actuels:\n\n${adminsList}`, {
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '➕ Ajouter un admin', callback_data: 'admin_add_admin' }],
+                                [{ text: '➖ Retirer un admin', callback_data: 'admin_remove_admin' }],
+                                [{ text: '⬅️ Retour', callback_data: 'admin_menu' }]
+                            ]
+                        }
+                    });
+                }
                 break;
         }
     } catch (error) {

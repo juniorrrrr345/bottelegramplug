@@ -50,6 +50,7 @@ function getAdminKeyboard() {
             [{ text: "🌐 Gérer les réseaux sociaux", callback_data: "admin_manage_social" }],
             [{ text: "ℹ️ Modifier les informations", callback_data: "admin_edit_info" }],
             [{ text: "📢 Envoyer un message à tous", callback_data: "admin_broadcast" }],
+            [{ text: "👥 Gérer les administrateurs", callback_data: "admin_manage_admins" }],
             [{ text: "❌ Fermer", callback_data: "admin_close" }]
         ]
     };
